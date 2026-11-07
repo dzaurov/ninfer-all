@@ -41,7 +41,8 @@ __device__ __forceinline__ float2 decode_nvfp4_e2m1x2_raw(std::uint8_t storage) 
 }
 
 __device__ __forceinline__ float nvfp4_e4m3_scale_a16(std::uint8_t storage) {
-    return decode_nvfp4_e4m3(storage);
+    // The vendor decode reads 0x7F as E4M3FN NaN; the ue4m3 table below decodes it as zero.
+    return storage == 0x7Fu ? 0.0F : decode_nvfp4_e4m3(storage);
 }
 
 __device__ __forceinline__ float2 decode_nvfp4_e2m1x2(std::uint8_t storage) {
@@ -79,7 +80,7 @@ __device__ __forceinline__ float2 decode_nvfp4_e2m1x2(std::uint8_t storage) {
 __device__ __forceinline__ unsigned nvfp4_scaled_pair_bf16(std::uint8_t code, std::uint8_t scale) {
 #if NINFER_NATIVE_FP8_FP4_PAIR_CVT
     // E2M1 times a finite E4M3 scale needs at most six significand bits, so the BF16 product is
-    // exact and equals the FP32 expansion below.
+    // exact and equals the FP32 expansion below; the 0x7F scale is zeroed first, as the table does.
     unsigned values, multiplier, result;
     asm("{\n"
         ".reg .b8 packed;\n"
@@ -88,7 +89,9 @@ __device__ __forceinline__ unsigned nvfp4_scaled_pair_bf16(std::uint8_t code, st
         "}\n"
         : "=r"(values)
         : "r"(static_cast<unsigned>(code)));
-    const auto scale_pair = static_cast<std::uint16_t>(scale | (static_cast<unsigned>(scale) << 8));
+    // cvt reads byte 0x7F as E4M3FN NaN; the ue4m3 table, and with it llama.cpp, decodes it as zero.
+    const unsigned finite = scale == 0x7Fu ? 0u : scale;
+    const auto scale_pair = static_cast<std::uint16_t>(finite | (finite << 8));
     asm("cvt.rn.bf16x2.e4m3x2 %0, %1;" : "=r"(multiplier) : "h"(scale_pair));
     asm("mul.rn.bf16x2 %0, %1, %2;" : "=r"(result) : "r"(values), "r"(multiplier));
     return result;
@@ -119,7 +122,9 @@ __device__ __forceinline__ unsigned nvfp4_scaled_pair_bf16(std::uint8_t code, st
 __device__ __forceinline__ void nvfp4_scaled_quad_bf16(unsigned codes, std::uint8_t scale,
                                                        unsigned out[4]) {
 #if NINFER_NATIVE_FP8_FP4_PAIR_CVT
-    const auto scale_pair = static_cast<std::uint16_t>(scale | (static_cast<unsigned>(scale) << 8));
+    // cvt reads byte 0x7F as E4M3FN NaN; the ue4m3 table, and with it llama.cpp, decodes it as zero.
+    const unsigned finite = scale == 0x7Fu ? 0u : scale;
+    const auto scale_pair = static_cast<std::uint16_t>(finite | (finite << 8));
     unsigned multiplier;
     asm("cvt.rn.bf16x2.e4m3x2 %0, %1;" : "=r"(multiplier) : "h"(scale_pair));
 #pragma unroll

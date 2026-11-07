@@ -40,7 +40,8 @@ __device__ __forceinline__ float2 decode_nvfp4_e2m1x2_raw(std::uint8_t storage) 
 }
 
 __device__ __forceinline__ float nvfp4_e4m3_scale_a16(std::uint8_t storage) {
-    return decode_nvfp4_e4m3(storage);
+    // The vendor decode reads 0x7F as E4M3FN NaN; the ue4m3 table below decodes it as zero.
+    return storage == 0x7Fu ? 0.0F : decode_nvfp4_e4m3(storage);
 }
 
 __device__ __forceinline__ float2 decode_nvfp4_e2m1x2(std::uint8_t storage) {
